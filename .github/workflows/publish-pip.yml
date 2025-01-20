@@ -1,6 +1,8 @@
 name: PyPI Publish
 
-on: push
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   build-n-publish:
