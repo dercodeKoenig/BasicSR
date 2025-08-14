@@ -14,6 +14,21 @@ from basicsr.utils import (AvgTimer, MessageLogger, check_resume, get_env_info, 
 from basicsr.utils.options import copy_opt_file, dict2str, parse_options
 
 
+def create_training_control_file(exp_path):
+    """Create the training control file with instructions."""
+    control_file_path = osp.join(exp_path, 'is_training.txt')
+    with open(control_file_path, 'w') as f:
+        f.write("Training in progress...\n")
+        f.write("Delete this file to stop training gracefully after the next scheduled checkpoint save.\n")
+        f.write(f"Training started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    return control_file_path
+
+
+def should_continue_training(control_file_path):
+    """Check if training should continue by verifying the control file exists."""
+    return osp.exists(control_file_path)
+
+
 def init_tb_loggers(opt):
     # initialize wandb logger before tensorboard logger to allow proper sync
     if (opt['logger'].get('wandb') is not None) and (opt['logger']['wandb'].get('project')
@@ -104,6 +119,9 @@ def train_pipeline(root_path):
         if opt['logger'].get('use_tb_logger') and 'debug' not in opt['name'] and opt['rank'] == 0:
             mkdir_and_rename(osp.join(opt['root_path'], 'tb_logger', opt['name']))
 
+    # Create training control file#
+    control_file_path = create_training_control_file(".")
+
     # copy the yml file to the experiment root
     copy_opt_file(args.opt, opt['path']['experiments_root'])
 
@@ -113,6 +131,9 @@ def train_pipeline(root_path):
     logger = get_root_logger(logger_name='basicsr', log_level=logging.INFO, log_file=log_file)
     logger.info(get_env_info())
     logger.info(dict2str(opt))
+    logger.info(f'Training control file created at: {control_file_path}')
+    logger.info('To stop training gracefully, delete the control file. Training will stop after the next checkpoint save.')
+    
     # initialize wandb and tb loggers
     tb_logger = init_tb_loggers(opt)
 
@@ -151,6 +172,9 @@ def train_pipeline(root_path):
     data_timer, iter_timer = AvgTimer(), AvgTimer()
     start_time = time.time()
 
+    # Flag to track if we should stop after next save
+    stop_requested = False
+
     for epoch in range(start_epoch, total_epochs + 1):
         train_sampler.set_epoch(epoch)
         prefetcher.reset()
@@ -162,6 +186,7 @@ def train_pipeline(root_path):
             current_iter += 1
             if current_iter > total_iters:
                 break
+                
             # update learning rate
             model.update_learning_rate(current_iter, warmup_iter=opt['train'].get('warmup_iter', -1))
             # training
@@ -184,6 +209,14 @@ def train_pipeline(root_path):
             if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
                 logger.info('Saving models and training states.')
                 model.save(epoch, current_iter)
+                
+                # Check if stop was requested after saving
+                if not should_continue_training(control_file_path):
+                    if not stop_requested:
+                        logger.info('Stop requested via control file deletion. Training will stop gracefully.')
+                        stop_requested = True
+                    # Break out of the training loop after saving
+                    break
 
             # validation
             if opt.get('val') is not None and (current_iter % opt['val']['val_freq'] == 0):
@@ -196,20 +229,30 @@ def train_pipeline(root_path):
             iter_timer.start()
             train_data = prefetcher.next()
         # end of iter
+        
+        # If stop was requested, break out of epoch loop too
+        if stop_requested:
+            break
 
     # end of epoch
 
     consumed_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
-    logger.info(f'End of training. Time consumed: {consumed_time}')
+    
+    if stop_requested:
+        logger.info(f'Training stopped gracefully upon request. Time consumed: {consumed_time}')
+        logger.info(f'Training stopped at epoch: {epoch}, iter: {current_iter}')
+    else:
+        logger.info(f'End of training. Time consumed: {consumed_time}')
+        
     logger.info('Save the latest model.')
     model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
+    
     if opt.get('val') is not None:
         for val_loader in val_loaders:
             model.validation(val_loader, current_iter, tb_logger, opt['val']['save_img'])
     if tb_logger:
         tb_logger.close()
-
-
+        
 if __name__ == '__main__':
     root_path = osp.abspath(osp.join(__file__, osp.pardir, osp.pardir))
     train_pipeline(root_path)
