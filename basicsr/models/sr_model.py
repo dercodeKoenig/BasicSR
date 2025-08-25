@@ -64,7 +64,7 @@ class SRModel(BaseModel):
             self.cri_perceptual = None
 
         if self.cri_pix is None and self.cri_perceptual is None:
-            raise ValueError('Both pixel and perceptual losses are None.')
+            print('Both pixel and perceptual losses are None.')
 
         # set up optimizers and schedulers
         self.setup_optimizers()
