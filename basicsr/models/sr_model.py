@@ -128,6 +128,9 @@ class SRModel(BaseModel):
             with torch.no_grad():
                 self.output = self.net_g(self.lq)
             self.net_g.train()
+    
+        # Clamp output to valid range for metrics / visualization
+        self.output = torch.clamp(self.output, 0.0, 1.0)
 
     def test_selfensemble(self):
         # TODO: to be tested
