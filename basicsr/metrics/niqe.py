@@ -194,6 +194,10 @@ def calculate_niqe(img, crop_border, input_order='HWC', convert_to='y', **kwargs
     # round is necessary for being consistent with MATLAB's result
     img = img.round()
 
-    niqe_result = niqe(img, mu_pris_param, cov_pris_param, gaussian_window)
+    try:
+        niqe_result = niqe(img, mu_pris_param, cov_pris_param, gaussian_window)
+    except Exception as e:
+        print(e)
+        return float('inf')
 
     return niqe_result
