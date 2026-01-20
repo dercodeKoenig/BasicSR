@@ -103,7 +103,20 @@ class BaseModel():
         return net
 
     def get_optimizer(self, optim_type, params, lr, **kwargs):
-        if optim_type == 'Adam':
+        try:
+            import bitsandbytes as bnb
+            bnb_available = True
+        except ImportError:
+            bnb_available = False
+            if "8bit" in optim_type:
+                raise ImportError("bitsandbytes is required for 8bit optimizers. Install with 'pip install bitsandbytes'")
+    
+        if optim_type == 'Adam8bit':
+            optimizer = bnb.optim.Adam8bit(params, lr, **kwargs)
+        elif optim_type == 'AdamW8bit':
+            optimizer = bnb.optim.AdamW8bit(params, lr, **kwargs)
+            
+        elif optim_type == 'Adam':
             optimizer = torch.optim.Adam(params, lr, **kwargs)
         elif optim_type == 'AdamW':
             optimizer = torch.optim.AdamW(params, lr, **kwargs)
