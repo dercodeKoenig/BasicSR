@@ -176,7 +176,7 @@ def train_pipeline(root_path):
     stop_requested = False
 
     for epoch in range(start_epoch, total_epochs + 1):
-        train_sampler.set_epoch(epoch)
+        train_sampler.set_epoch(current_iter)
         prefetcher.reset()
         train_data = prefetcher.next()
 
